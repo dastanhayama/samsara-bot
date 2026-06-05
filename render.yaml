@@ -1,0 +1,17 @@
+# Render Blueprint — defines the service so you don't configure it by hand.
+# Free Web Service: binds $PORT (health check) while the bot polls Telegram.
+services:
+  - type: web
+    name: samsara-where-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python where_bot.py
+    envVars:
+      # Set the actual values in the Render dashboard (mark them secret).
+      - key: SAMSARA_TOKEN
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: SAMSARA_ORG_ID
+        value: "10001557"

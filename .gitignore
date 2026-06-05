@@ -1,0 +1,9 @@
+# Secrets — never commit
+.env.local
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
