@@ -2,6 +2,9 @@
 .env.local
 .env
 
+# Runtime state
+monitor_state.json
+
 # Python
 __pycache__/
 *.pyc
