@@ -221,29 +221,90 @@ def units_on_site(address_id: str) -> tuple[dict | None, list[tuple[str, str, di
 _M_PER_MILE = 1609.344
 
 
-def geocode(text: str) -> tuple[float, float, str] | None:
-    """Free-text address -> (lat, lon, display_name) via OpenStreetMap Nominatim.
+_GEOCODE_UA = "samsara-where-bot/1.0 (fleet dispatch tool)"
 
-    No API key; Nominatim's usage policy requires a descriptive User-Agent and
-    light use (this is one call per /nearest), which we satisfy.
-    """
+
+def _geocode_photon(text: str):
+    """Photon (Komoot) — full address geocoder, free, works from cloud IPs."""
     import requests
 
-    try:
-        resp = requests.get(
-            "https://nominatim.openstreetmap.org/search",
-            params={"q": text, "format": "json", "limit": 1},
-            headers={"User-Agent": "samsara-where-bot/1.0 (fleet dispatch tool)"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
+    resp = requests.get(
+        "https://photon.komoot.io/api/",
+        params={"q": text, "limit": 1},
+        headers={"User-Agent": _GEOCODE_UA},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    feats = resp.json().get("features") or []
+    if not feats:
         return None
+    f = feats[0]
+    lon, lat = f["geometry"]["coordinates"]
+    p = f.get("properties", {})
+    label = ", ".join(x for x in (p.get("name"), p.get("city"), p.get("state")) if x) or text
+    return float(lat), float(lon), label
+
+
+def _geocode_nominatim(text: str):
+    """OpenStreetMap Nominatim — often blocks cloud IPs, kept as a fallback."""
+    import requests
+
+    resp = requests.get(
+        "https://nominatim.openstreetmap.org/search",
+        params={"q": text, "format": "json", "limit": 1},
+        headers={"User-Agent": _GEOCODE_UA},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
     if not data:
         return None
     top = data[0]
     return float(top["lat"]), float(top["lon"]), top.get("display_name", text)
+
+
+def _geocode_openmeteo(text: str):
+    """Open-Meteo — city-level only, but very reliable from cloud hosts."""
+    import requests
+
+    resp = requests.get(
+        "https://geocoding-api.open-meteo.com/v1/search",
+        params={"name": text, "count": 1},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    results = resp.json().get("results") or []
+    if not results:
+        return None
+    r = results[0]
+    label = ", ".join(x for x in (r.get("name"), r.get("admin1")) if x) or text
+    return float(r["latitude"]), float(r["longitude"]), label
+
+
+def geocode(text: str) -> tuple[float, float, str] | None:
+    """Free-text address -> (lat, lon, display_name).
+
+    Tries Photon first (cloud-friendly, handles street addresses), then
+    Nominatim, then Open-Meteo (city-level). Returns the first hit, or None.
+    Logs each provider's failure so production isn't debugging blind.
+    """
+    import logging
+    import requests
+
+    log = logging.getLogger("where_bot")
+    for name, fn in (
+        ("photon", _geocode_photon),
+        ("nominatim", _geocode_nominatim),
+        ("open-meteo", _geocode_openmeteo),
+    ):
+        try:
+            result = fn(text)
+            if result:
+                return result
+            log.info("geocode %s: no result for %r", name, text)
+        except requests.RequestException as exc:
+            log.warning("geocode %s failed for %r: %s", name, text, exc)
+    return None
 
 
 def _polygon_center(verts: list[tuple[float, float]]) -> tuple[float, float]:
