@@ -224,6 +224,19 @@ _M_PER_MILE = 1609.344
 _GEOCODE_UA = "samsara-where-bot/1.0 (fleet dispatch tool)"
 
 
+def _centered(lat: float, lon: float, bbox, label: str):
+    """If a city-sized bounding box is present, rank from its true center so a
+    truck on any edge of the city is measured fairly (the geocoder's labeled
+    point is often downtown, not the geographic middle). bbox = (S, W, N, E)."""
+    if bbox:
+        s, w, n, e = bbox
+        span_mi = max(abs(n - s), abs(e - w)) * 69  # rough miles per degree
+        # Only re-center for area-like results (towns/cities), not pinpoints.
+        if span_mi >= 2:
+            return ((s + n) / 2, (w + e) / 2, label)
+    return (lat, lon, label)
+
+
 def _geocode_photon(text: str):
     """Photon (Komoot) — full address geocoder, free, works from cloud IPs."""
     import requests
@@ -242,7 +255,9 @@ def _geocode_photon(text: str):
     lon, lat = f["geometry"]["coordinates"]
     p = f.get("properties", {})
     label = ", ".join(x for x in (p.get("name"), p.get("city"), p.get("state")) if x) or text
-    return float(lat), float(lon), label
+    ext = p.get("extent")  # [W, N, E, S]
+    bbox = (ext[3], ext[0], ext[1], ext[2]) if ext else None  # -> (S, W, N, E)
+    return _centered(float(lat), float(lon), bbox, label)
 
 
 def _geocode_nominatim(text: str):
@@ -260,7 +275,9 @@ def _geocode_nominatim(text: str):
     if not data:
         return None
     top = data[0]
-    return float(top["lat"]), float(top["lon"]), top.get("display_name", text)
+    bb = top.get("boundingbox")  # [S, N, W, E] as strings
+    bbox = (float(bb[0]), float(bb[2]), float(bb[1]), float(bb[3])) if bb else None
+    return _centered(float(top["lat"]), float(top["lon"]), bbox, top.get("display_name", text))
 
 
 def _geocode_openmeteo(text: str):
