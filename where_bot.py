@@ -345,6 +345,40 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await chat.send_message(f"⚠️ Something went wrong: {exc}")
 
 
+def _split_message(text: str, limit: int = 4000) -> list[str]:
+    """Split a long report into <=limit chunks, breaking only between lines."""
+    chunks, cur = [], ""
+    for line in text.split("\n"):
+        if len(cur) + len(line) + 1 > limit and cur:
+            chunks.append(cur)
+            cur = ""
+        cur += (line + "\n")
+    if cur.strip():
+        chunks.append(cur)
+    return chunks
+
+
+async def statusall(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/statusall — full fleet: moving, parked-at-locations, then other parked."""
+    chat = update.effective_chat
+    await context.bot.send_chat_action(chat.id, ChatAction.TYPING)
+    try:
+        fleet = await asyncio.to_thread(monitor.snapshot_fleet)
+        if not fleet:
+            await chat.send_message("No trucks or trailers with GPS data right now.")
+            return
+        report = monitor.fleet_status_report(fleet, _ago)
+        for chunk in _split_message(report):
+            await chat.send_message(chunk, parse_mode="Markdown")
+            await asyncio.sleep(0.3)  # gentle pacing across multiple messages
+    except requests.HTTPError as exc:
+        log.exception("Samsara API error")
+        await chat.send_message(f"⚠️ Samsara API error: {exc.response.status_code}")
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Unexpected error")
+        await chat.send_message(f"⚠️ Something went wrong: {exc}")
+
+
 async def where(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.message.reply_text(
@@ -745,6 +779,7 @@ async def _post_init(app: Application) -> None:
             BotCommand("site", "Find a location by name, e.g. /site pa-il"),
             BotCommand("sites", "Browse all saved locations"),
             BotCommand("nearest", "Closest trucks to a place, e.g. /nearest pa-il"),
+            BotCommand("statusall", "Full fleet status — all trucks & trailers"),
             BotCommand("start", "How to use this bot"),
         ]
     )
@@ -794,6 +829,7 @@ def main() -> None:
     # app.add_handler(CommandHandler("here", here))
     # app.add_handler(CommandHandler("monitor", monitor_cmd))
     # app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("statusall", statusall))
     app.add_handler(CommandHandler("where", where))
     app.add_handler(CommandHandler("site", site))
     app.add_handler(CommandHandler("sites", sites))

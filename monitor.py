@@ -67,6 +67,121 @@ def snapshot_trucks() -> list[dict]:
     return out
 
 
+def snapshot_fleet() -> list[dict]:
+    """Bulk fetch every truck AND trailer with GPS, tagged by kind + geofence.
+
+    Returns [{name, kind, lat, lon, speed, address, place, time}]. Two requests
+    total (one per endpoint) regardless of fleet size.
+    """
+    from where_bot import SAMSARA_BASE, HEADERS  # lazy import to avoid a cycle
+    import requests
+
+    out: list[dict] = []
+    for path, kind in (
+        ("/fleet/vehicles/stats", "truck"),
+        ("/fleet/trailers/stats", "trailer"),
+    ):
+        resp = requests.get(
+            SAMSARA_BASE + path, headers=HEADERS, params={"types": "gps"}, timeout=30
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("data", []):
+            g = item.get("gps")
+            if not g or g.get("latitude") is None:
+                continue
+            lat, lon = g["latitude"], g["longitude"]
+            out.append(
+                {
+                    "name": str(item.get("name", "")),
+                    "kind": kind,
+                    "lat": lat,
+                    "lon": lon,
+                    "speed": g.get("speedMilesPerHour") or 0,
+                    "address": (g.get("reverseGeo") or {}).get("formattedLocation", ""),
+                    "place": geofence.place_for_point(lat, lon),
+                    "time": g.get("time", ""),
+                }
+            )
+    return out
+
+
+def _icon(kind: str) -> str:
+    return "🚛" if kind == "truck" else "🛻"
+
+
+def _unit_line(u: dict, ago_fn) -> str:
+    """One detailed line: icon, name, speed/parked, location, fix age."""
+    icon = _icon(u["kind"])
+    age = ago_fn(u.get("time", ""))
+    if u["speed"] >= MOVING_MPH:
+        return f"{icon} *{u['name']}* · {round(u['speed'])} mph · {u['address'] or '—'} · fix {age}"
+    where = u["place"] or u["address"] or "—"
+    return f"{icon} *{u['name']}* · {where} · fix {age}"
+
+
+def _sort_units(units: list[dict]) -> list[dict]:
+    """Trucks before trailers, then by name (numeric-aware where possible)."""
+    def key(u):
+        try:
+            n = (0, int(u["name"]))
+        except ValueError:
+            n = (1, u["name"])
+        return (u["kind"] != "truck", n)
+
+    return sorted(units, key=key)
+
+
+def fleet_status_report(fleet: list[dict], ago_fn) -> str:
+    """Full grouped report, in the order:
+    1) moving (trucks then trailers),
+    2) parked at saved locations (grouped by place, trucks then trailers),
+    3) all other parked (trucks then trailers).
+    `ago_fn` is where_bot._ago (passed in to avoid an import cycle).
+    """
+    moving = [u for u in fleet if u["speed"] >= MOVING_MPH]
+    parked = [u for u in fleet if u["speed"] < MOVING_MPH]
+    at_loc = [u for u in parked if u["place"]]
+    other = [u for u in parked if not u["place"]]
+
+    n_t = sum(1 for u in fleet if u["kind"] == "truck")
+    n_tr = len(fleet) - n_t
+    lines = [
+        f"🚚 *Fleet status* — {n_t} trucks, {n_tr} trailers",
+        f"🟢 Moving: {len(moving)}   📍 At locations: {len(at_loc)}   🅿️ Other: {len(other)}",
+    ]
+
+    # 1) Moving
+    lines.append("")
+    lines.append(f"🟢 *MOVING ({len(moving)})*")
+    if moving:
+        lines += [_unit_line(u, ago_fn) for u in _sort_units(moving)]
+    else:
+        lines.append("_none_")
+
+    # 2) Parked at saved locations, grouped by place
+    lines.append("")
+    lines.append(f"📍 *PARKED AT LOCATIONS ({len(at_loc)})*")
+    if at_loc:
+        by_place: dict[str, list[dict]] = {}
+        for u in at_loc:
+            by_place.setdefault(u["place"], []).append(u)
+        for place in sorted(by_place):
+            lines.append(f"*{place}*")
+            lines += [f"  {_unit_line(u, ago_fn)}" for u in _sort_units(by_place[place])]
+    else:
+        lines.append("_none_")
+
+    # 3) All other parked
+    lines.append("")
+    lines.append(f"🅿️ *OTHER PARKED ({len(other)})*")
+    if other:
+        lines += [_unit_line(u, ago_fn) for u in _sort_units(other)]
+    else:
+        lines.append("_none_")
+
+    return "\n".join(lines)
+
+
 def fleet_summary(trucks: list[dict]) -> str:
     """A point-in-time overview: counts moving/parked and trucks per location."""
     total = len(trucks)
