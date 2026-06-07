@@ -274,13 +274,9 @@ async def respond_for(update: Update, context: ContextTypes.DEFAULT_TYPE, name: 
             await chat.send_message(f"*{name}* found, but no GPS data is available.", parse_mode="Markdown")
             return
 
-        # For trucks, infer the trailer being pulled (GPS proximity).
+        # Trailer pairing disabled for now (kept in geofence.trailer_for_truck).
+        # To re-enable: compute pairing for vehicles and pass it to format_unit.
         pairing = None
-        if kind == "vehicle":
-            pairing = await asyncio.to_thread(
-                geofence.trailer_for_truck, gps.get("latitude"), gps.get("longitude")
-            )
-
         text, lat, lon = format_unit(name, kind, gps, pairing)
         await chat.send_message(
             text,
@@ -742,23 +738,21 @@ async def monitor_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def _post_init(app: Application) -> None:
-    """Register the command menu and, if configured, start the monitor loop."""
+    """Register the command menu. (Monitor loop disabled for now.)"""
     await app.bot.set_my_commands(
         [
             BotCommand("where", "Locate a truck or trailer, e.g. /where 797"),
             BotCommand("site", "Find a location by name, e.g. /site pa-il"),
             BotCommand("sites", "Browse all saved locations"),
             BotCommand("nearest", "Closest trucks to a place, e.g. /nearest pa-il"),
-            BotCommand("status", "Fleet overview — moving/parked & per location"),
-            BotCommand("monitor", "Turn fleet alerts on/off, e.g. /monitor off"),
-            BotCommand("here", "Show this chat's ID (to enable alerts)"),
             BotCommand("start", "How to use this bot"),
         ]
     )
-    if MONITOR_CHAT_ID:
-        app.create_task(_monitor_loop(app))
-    else:
-        log.info("Monitor disabled (MONITOR_CHAT_ID not set).")
+    # Fleet-event monitor disabled for now. To re-enable: restore the /status,
+    # /monitor, /here menu entries and the handler registrations in main(), then:
+    #   if MONITOR_CHAT_ID:
+    #       app.create_task(_monitor_loop(app))
+    log.info("Monitor disabled.")
 
 
 def _start_health_server() -> None:
@@ -796,9 +790,10 @@ def main() -> None:
 
     app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("here", here))
-    app.add_handler(CommandHandler("monitor", monitor_cmd))
-    app.add_handler(CommandHandler("status", status))
+    # Monitor commands disabled for now (handlers kept above; re-add to enable):
+    # app.add_handler(CommandHandler("here", here))
+    # app.add_handler(CommandHandler("monitor", monitor_cmd))
+    # app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("where", where))
     app.add_handler(CommandHandler("site", site))
     app.add_handler(CommandHandler("sites", sites))
