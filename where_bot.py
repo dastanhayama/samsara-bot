@@ -803,10 +803,18 @@ def _start_health_server() -> None:
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
     class Health(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
+        def _ok(self, body: bool = True):
             self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"ok")
+            if body:
+                self.wfile.write(b"ok")
+
+        def do_GET(self):  # noqa: N802
+            self._ok()
+
+        def do_HEAD(self):  # noqa: N802 — UptimeRobot default; avoid 501s
+            self._ok(body=False)
 
         def log_message(self, *args):  # silence per-request logging
             pass
