@@ -297,18 +297,22 @@ async def respond_for(update: Update, context: ContextTypes.DEFAULT_TYPE, name: 
 # --------------------------------------------------------------------------- #
 
 WELCOME = (
-    "👋 *Fleet Locator*\n\n"
-    "*Find a unit*\n"
-    "• `/where 797` — locate a truck or trailer\n"
-    "• `/where 797 9917` — several at once\n"
-    "• `797` — just the number, no slash\n\n"
-    "*Find what's at a location*\n"
-    "• `/site pa-il` — units on-site at a saved place\n"
-    "• `/sites` — browse all saved locations\n"
-    "• `/nearest pa-il` — closest trucks to a place or address\n"
-    "• type `@<this bot> pa-il` in any chat — inline search\n\n"
-    "Unit results show the address (with the saved-location name if it's parked at one), "
-    "a map pin, and moving/parked status."
+    "🛰️ *Fleet Locator* — real-time truck & trailer tracking\n"
+    "━━━━━━━━━━━━━━━━━━━━\n\n"
+    "📍 *Locate*\n"
+    "`/where 797` — find a truck or trailer\n"
+    "`/where 797 9917` — several at once\n"
+    "_or just send the number:_ `797`\n\n"
+    "🏢 *Locations*\n"
+    "`/site pa-il` — what's on-site at a saved place\n"
+    "`/sites` — browse all saved locations\n"
+    "`@<bot> pa-il` — inline search in any chat\n\n"
+    "🧭 *Dispatch*\n"
+    "`/nearest pa-il` — closest trucks to a place or address\n"
+    "`/statusall` — whole fleet: moving, at-locations, parked\n\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "_Every result shows the live address, saved-location name, "
+    "map pin, and moving/parked status._"
 )
 
 
